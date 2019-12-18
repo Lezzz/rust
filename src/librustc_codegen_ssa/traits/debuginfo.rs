@@ -45,6 +45,7 @@ pub trait DebugInfoBuilderMethods<'tcx>: BackendTypes {
         indirect_offsets: &[Size],
         variable_kind: VariableKind,
         span: Span,
+        is_by_value: bool,
     );
     fn set_source_location(
         &mut self,

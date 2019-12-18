@@ -312,7 +312,13 @@ impl<'mir, 'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> Visitor<'tcx>
                 // FIXME(eddyb): We should figure out how to use `llvm.dbg.value` instead
                 // of putting everything in allocas just so we can use `llvm.dbg.declare`.
                 if self.fx.cx.sess().opts.debuginfo == DebugInfo::Full {
-                    self.not_ssa(local);
+                    let decl_span = self.fx.mir.local_decls[local].source_info.span;
+                    let ty = self.fx.mir.local_decls[local].ty;
+                    let ty = self.fx.monomorphize(&ty);
+                    let layout = self.fx.cx.spanned_layout_of(ty, decl_span);
+                    if !self.fx.cx.is_backend_immediate(layout) {
+                        self.not_ssa(local);
+                    }
                 }
             }
 

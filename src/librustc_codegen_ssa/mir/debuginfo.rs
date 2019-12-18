@@ -179,11 +179,14 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
             None => return,
         };
 
-        // FIXME(eddyb) add debuginfo for unsized places too.
-        let base = match local_ref {
-            LocalRef::Place(place) => place,
-            _ => return,
-        };
+        let base_layout = match local_ref {
+            LocalRef::Operand(Some(operand)) => operand.layout,
+            LocalRef::Place(place) => place.layout,
+
+            // FIXME(eddyb) add debuginfo for unsized places too.
+            LocalRef::UnsizedPlace(_) |
+            LocalRef::Operand(None)  => return,
+        };       
 
         let vars = vars.iter().copied().chain(if whole_local_var.is_none() {
             fallback_var.as_ref()
@@ -192,7 +195,7 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
         });
 
         for var in vars {
-            let mut layout = base.layout;
+            let mut layout = base_layout;
             let mut direct_offset = Size::ZERO;
             // FIXME(eddyb) use smallvec here.
             let mut indirect_offsets = vec![];
@@ -238,8 +241,22 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
 
             let (scope, span) = self.debug_loc(var.source_info);
             if let Some(scope) = scope {
-                bx.declare_local(debug_context, var.name, layout.ty, scope,
-                    base.llval, direct_offset, &indirect_offsets, kind, span);
+                match local_ref {
+                    LocalRef::Place(place) => {
+                        bx.declare_local(debug_context, var.name, layout.ty, scope,
+                            place.llval, direct_offset, &indirect_offsets, kind, span, false);
+                    }
+                    LocalRef::Operand(Some(operand)) => match operand.val {
+                        OperandValue::Immediate(x) => {
+                            bx.declare_local(debug_context, var.name, layout.ty, scope,
+                                x, direct_offset, &indirect_offsets, kind, span, true);
+                        }
+                        OperandValue::Ref(..) => unreachable!(),
+                        OperandValue::Pair(..) => {}
+                    },
+                    LocalRef::UnsizedPlace(_) |
+                    LocalRef::Operand(None)  => unreachable!(),
+                }
             }
         }
     }

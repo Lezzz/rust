@@ -158,8 +158,9 @@ impl DebugInfoBuilderMethods<'tcx> for Builder<'a, 'll, 'tcx> {
         indirect_offsets: &[Size],
         variable_kind: VariableKind,
         span: Span,
+        is_by_val: bool,
     ) {
-        assert!(!dbg_context.source_locations_enabled);
+        assert!(!dbg_context.source_locations_enabled || is_by_val);
         let cx = self.cx();
 
         let file = span_start(cx, span).file;
@@ -213,18 +214,32 @@ impl DebugInfoBuilderMethods<'tcx> for Builder<'a, 'll, 'tcx> {
             InternalDebugLocation::new(scope_metadata, loc.line, loc.col.to_usize()));
         unsafe {
             let debug_loc = llvm::LLVMGetCurrentDebugLocation(self.llbuilder);
-            let instr = llvm::LLVMRustDIBuilderInsertDeclareAtEnd(
-                DIB(cx),
-                variable_alloca,
-                metadata,
-                addr_ops.as_ptr(),
-                addr_ops.len() as c_uint,
-                debug_loc,
-                self.llbb());
+            let instr = if is_by_val {
+                llvm::LLVMRustDIBuilderInsertDbgValueAtEnd(
+                    DIB(cx),
+                    variable_alloca,
+                    metadata,
+                    addr_ops.as_ptr(),
+                    addr_ops.len() as c_uint,
+                    debug_loc,
+                    self.llbb())
+            } else {
+                llvm::LLVMRustDIBuilderInsertDeclareAtEnd(
+                    DIB(cx),
+                    variable_alloca,
+                    metadata,
+                    addr_ops.as_ptr(),
+                    addr_ops.len() as c_uint,
+                    debug_loc,
+                    self.llbb())
+            };
+                
 
             llvm::LLVMSetInstDebugLocation(self.llbuilder, instr);
         }
-        source_loc::set_debug_location(self, UnknownLocation);
+        if !is_by_val {
+            source_loc::set_debug_location(self, UnknownLocation);
+        }
     }
 
     fn set_source_location(
